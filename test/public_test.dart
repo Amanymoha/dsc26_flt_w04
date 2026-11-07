@@ -1,3 +1,4 @@
+
 import 'package:dsc26_flt_w04/data/local_store.dart';
 import 'package:dsc26_flt_w04/data/outbox.dart';
 import 'package:dsc26_flt_w04/domain/delivery_outcome.dart';
@@ -58,7 +59,7 @@ void main() {
     tester.view.devicePixelRatio = 1.0;
     tester.view.physicalSize = const Size(360, 740);
     addTearDown(tester.view.reset);
-    await tester.pumpWidget(TawseelStopsApp(stops: sampleStops, pendingCount: 0));
+    await tester.pumpWidget(const TawseelStopsApp(stops: sampleStops, pendingCount: 0));
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('layout-compact')), findsOneWidget);
     tester.view.physicalSize = const Size(800, 1000);
@@ -68,7 +69,7 @@ void main() {
 
   testWidgets('meets tap target and label guidelines', (tester) async {
     final handle = tester.ensureSemantics();
-    await tester.pumpWidget(TawseelStopsApp(stops: sampleStops, pendingCount: 3));
+    await tester.pumpWidget(const TawseelStopsApp(stops: sampleStops, pendingCount: 3));
     await tester.pumpAndSettle();
     await expectLater(tester, meetsGuideline(androidTapTargetGuideline));
     await expectLater(tester, meetsGuideline(labeledTapTargetGuideline));

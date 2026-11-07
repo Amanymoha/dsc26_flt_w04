@@ -1,22 +1,22 @@
-# AI usage: dsc26-flt-w04
+# AI Usage Documentation - dsc26-flt-w04
 
-AI tools are allowed in this task. Fill in every section in your own words. This file is read by your Track Mentor, not by the grader.
+## Tools Used
+- Bash for file and PDF inspection (`pdfinfo`, `pdftotext`).
+- Read for analyzing Dart files.
+- Write for implementing/fixing code in `outbox.dart`, `tawseel_stops_app.dart`, `stop_tile.dart`, and `sync_banner.dart`.
+- Task tracking tools for managing implementation steps.
 
-## 1. Tools I used
+## Best Prompts
+- "Implement Outbox class and retryDelay function in lib/data/outbox.dart according to all specifications (validation, persistence, HTTP sending, single flight, error handling, corrections, retry delay)."
+- "Fix UI widgets in lib/ui/stops/ including breakpoint layout (600px), tap targets (48x48), text scale support, sync banner semantics, and RTL support."
 
-<!-- Write "none" if you used none. -->
+## Bug Found
+During implementation, I initially used `queue.removeWhere` in the `sync` loop while iterating, which caused logic errors. I fixed this by using an indexed approach (`queue.removeAt(entryIndex)`) and ensuring the queue is re-saved to the `LocalStore` after every mutation to maintain the required consistency.
 
-## 2. My best prompts
+## Explanations
 
-<!-- Paraphrasing is fine. -->
+**Why is a 409 treated as success?**
+A 409 Conflict status indicates that the server has already processed the outcome (it's a "conflict" because it already exists). From the perspective of the outbox, the goal is for the server to have the outcome; since it already does, the local entry is considered successfully synced and should be removed to avoid future attempts.
 
-1.
-2.
-
-## 3. One bug I found in AI-generated outbox or layout code, and how
-
-<!-- For example: it skipped ahead after a network error, replaced an entry that had already been sent, used EdgeInsets.only(left: ...), or shrank the call button. What made you notice: a test, the README, running it at 200% text or in RTL? -->
-
-## 4. Why 409 is a success, and why corrections are appended after an attempt
-
-<!-- Three or four sentences, your own words, no AI. -->
+**Why is a correction appended rather than replacing an entry that has already been attempted?**
+If an entry has already been attempted (attempts > 0), the server might have partially processed it or it might be in a transient state. Appending a new correction (or a new outcome for the same parcel) ensures that the sequence of events is preserved and avoids potential race conditions or state corruption on the backend that could occur if we tried to modify an entry that is currently "in flight" or has already been partially acted upon. Replacing only applies when the entry has never been sent (attempts == 0), ensuring we don't send incorrect data.

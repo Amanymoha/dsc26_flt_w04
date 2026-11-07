@@ -25,42 +25,42 @@ class StopTile extends StatelessWidget {
       StopStatus.delivered => Colors.green.shade700,
       StopStatus.failed => Colors.red.shade700,
     };
-    return SizedBox(
-      height: 64,
-      child: InkWell(
-        onTap: onTap,
-        child: Stack(
+
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 12.0),
+        child: Row(
           children: [
-            Positioned(
-              left: 12,
-              top: 26,
-              child: Container(
-                key: Key('stop-dot-${stop.id}'),
-                width: 12,
-                height: 12,
-                decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-              ),
+            Container(
+              key: Key('stop-dot-${stop.id}'),
+              width: 12,
+              height: 12,
+              decoration: BoxDecoration(color: color, shape: BoxShape.circle),
             ),
-            Padding(
-              padding: const EdgeInsets.only(left: 36, right: 48),
+            const SizedBox(width: 12),
+            Expanded(
               child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(stop.customerName,
-                      style: const TextStyle(fontWeight: FontWeight.bold)),
-                  Text(stop.address, maxLines: 1),
+                  Text(
+                    stop.customerName,
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(stop.address),
                 ],
               ),
             ),
-            Positioned(
-              right: 8,
-              top: 16,
+            const SizedBox(width: 8),
+            SizedBox(
+              width: 48,
+              height: 48,
               child: IconButton(
                 key: Key('call-${stop.id}'),
-                icon: const Icon(Icons.call, size: 18),
-                padding: EdgeInsets.zero,
-                constraints: BoxConstraints.tight(const Size(32, 32)),
+                tooltip: 'Call ${stop.customerName}',
+                icon: const Icon(Icons.call, size: 20),
                 onPressed: onCall,
               ),
             ),

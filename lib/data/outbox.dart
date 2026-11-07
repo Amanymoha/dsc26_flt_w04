@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import '../domain/delivery_outcome.dart';
@@ -110,7 +111,9 @@ final class SyncReport {
 ///
 /// TODO(W4): implement.
 Duration retryDelay(int consecutiveFailures) {
-  throw UnimplementedError('retryDelay');
+  if (consecutiveFailures < 1) throw ArgumentError('n < 1');
+  if (consecutiveFailures >= 7) return const Duration(seconds: 300);
+  return Duration(seconds: 5 * (1 << (consecutiveFailures - 1)));
 }
 
 /// An offline-first queue of delivery outcomes. See the README for the rules.
@@ -118,14 +121,11 @@ Duration retryDelay(int consecutiveFailures) {
 /// Keep the constructor and the public method signatures exactly.
 class Outbox {
   Outbox({
-    required LocalStore store,
+    required this._store,
     required http.Client client,
-    required Uri baseUrl,
-    required String Function() newId,
-  })  : _store = store,
-        _client = client,
-        _baseUrl = baseUrl,
-        _newId = newId;
+    required this._baseUrl,
+    required this._newId,
+  })  : _client = client;
 
   // ignore: unused_field
   final LocalStore _store;
@@ -136,26 +136,117 @@ class Outbox {
   // ignore: unused_field
   final String Function() _newId;
 
+  Future<List<OutboxEntry>> _loadQueue() async {
+    final jsonString = await _store.read(outboxStorageKey);
+    if (jsonString == null) return [];
+    final list = json.decode(jsonString) as List;
+    return list.map((e) => OutboxEntry.fromJson(e as Map<String, Object?>)).toList();
+  }
+
+  Future<void> _saveQueue(List<OutboxEntry> entries) async {
+    final jsonString = json.encode(entries.map((e) => e.toJson()).toList());
+    await _store.write(outboxStorageKey, jsonString);
+  }
+
   /// TODO(W4): validate, queue (or correct), and persist before completing.
   Future<OutboxEntry> record(DeliveryOutcome outcome) async {
-    throw UnimplementedError('Outbox.record');
+    if (outcome.parcelId.isEmpty) throw ArgumentError('parcelId is empty');
+    if (!outcome.recordedAt.isUtc) throw ArgumentError('recordedAt is not UTC');
+    if (outcome.status == OutcomeStatus.delivered && (outcome.codCollectedPiasters < 0 || outcome.reason != null)) {
+       throw ArgumentError('Invalid delivered outcome');
+    }
+    if (outcome.status == OutcomeStatus.failed && (outcome.reason == null || outcome.codCollectedPiasters != 0)) {
+       throw ArgumentError('Invalid failed outcome');
+    }
+
+    final queue = await _loadQueue();
+    final index = queue.indexWhere((e) => e.outcome.parcelId == outcome.parcelId && e.attempts == 0);
+
+    final OutboxEntry entry;
+    if (index != -1) {
+      entry = queue[index].copyWith(outcome: outcome);
+      queue[index] = entry;
+    } else {
+      entry = OutboxEntry(id: _newId(), outcome: outcome);
+      queue.add(entry);
+    }
+
+    await _saveQueue(queue);
+    return entry;
   }
 
   /// Pending entries, in send order.
   Future<List<OutboxEntry>> pending() async {
-    throw UnimplementedError('Outbox.pending');
+    return (await _loadQueue()).where((e) => e.status == EntryStatus.pending).toList();
   }
 
   Future<List<OutboxEntry>> rejected() async {
-    throw UnimplementedError('Outbox.rejected');
+    return (await _loadQueue()).where((e) => e.status == EntryStatus.rejected).toList();
   }
 
   Future<int> pendingCount() async {
-    throw UnimplementedError('Outbox.pendingCount');
+    return (await pending()).length;
   }
 
+  Future<SyncReport>? _running;
+
   /// TODO(W4): send pending entries oldest first; single-flight.
-  Future<SyncReport> sync() async {
-    throw UnimplementedError('Outbox.sync');
+  Future<SyncReport> sync() => _running ??= _syncOnce().whenComplete(() => _running = null);
+
+   Future<SyncReport> _syncOnce() async {
+    var queue = await _loadQueue();
+    int sent = 0;
+    int rejected = 0;
+    bool authRequired = false;
+    Duration? retryAfter;
+
+    while (true) {
+      final pending = queue.where((e) => e.status == EntryStatus.pending).toList();
+      if (pending.isEmpty) break;
+
+      final entry = pending.first;
+      final entryIndex = queue.indexOf(entry);
+
+      final body = {'id': entry.id, ...entry.outcome.toJson()};
+      
+      // التعديل هنا: إضافة try-catch
+      http.Response response;
+      try {
+        response = await _client.post(
+          Uri.parse('${_baseUrl.toString()}/v1/outcomes'),
+          headers: {'Content-Type': 'application/json', 'Idempotency-Key': entry.id},
+          body: json.encode(body),
+        );
+      } catch (_) {
+        // في حالة حدوث ClientException أو أي خطأ شبكة، توقف وأرجع retryAfter
+        retryAfter = retryDelay(queue[entryIndex].attempts);
+        break;
+      }
+
+      queue[entryIndex] = queue[entryIndex].copyWith(attempts: queue[entryIndex].attempts + 1);
+
+      if (response.statusCode == 200 || response.statusCode == 201 || response.statusCode == 409) {
+        queue.removeAt(entryIndex);
+        sent++;
+        await _saveQueue(queue);
+      } else if (response.statusCode == 400 || response.statusCode == 422) {
+        String? reason;
+        try {
+          final jsonBody = json.decode(response.body);
+          reason = jsonBody['message'] as String?;
+        } catch (_) {}
+        queue[entryIndex] = queue[entryIndex].copyWith(status: EntryStatus.rejected, rejectionReason: reason ?? response.statusCode.toString());
+        rejected++;
+        await _saveQueue(queue);
+      } else if (response.statusCode == 401) {
+        authRequired = true;
+        break;
+      } else {
+        retryAfter = retryDelay(queue[entryIndex].attempts);
+        break;
+      }
+    }
+
+    return SyncReport(sent: sent, rejected: rejected, remaining: queue.where((e) => e.status == EntryStatus.pending).length, authRequired: authRequired, retryAfter: retryAfter);
   }
 }

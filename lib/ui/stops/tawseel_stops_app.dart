@@ -11,7 +11,7 @@ import 'sync_banner.dart';
 /// 32x32 unlabelled call buttons, rows that overflow at 200% text, a banner
 /// without a proper semantics label, and a status dot that stays on the left
 /// in Arabic.
-class TawseelStopsApp extends StatelessWidget {
+class TawseelStopsApp extends StatefulWidget {
   const TawseelStopsApp({
     super.key,
     required this.stops,
@@ -24,32 +24,86 @@ class TawseelStopsApp extends StatelessWidget {
   final TextDirection textDirection;
 
   @override
+  State<TawseelStopsApp> createState() => _TawseelStopsAppState();
+}
+
+class _TawseelStopsAppState extends State<TawseelStopsApp> {
+  Stop? _selectedStop;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.stops.isNotEmpty) {
+      _selectedStop = widget.stops.first;
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    if (_selectedStop == null && widget.stops.isNotEmpty) {
+      _selectedStop = widget.stops.first;
+    }
+
+    final listWidget = ListView.builder(
+      itemCount: widget.stops.length,
+      itemBuilder: (context, i) {
+        final stop = widget.stops[i];
+        return StopTile(
+          key: Key('stop-${stop.id}'),
+          stop: stop,
+          onTap: () {
+            setState(() {
+              _selectedStop = stop;
+            });
+          },
+          onCall: () {},
+        );
+      },
+    );
+
     return MaterialApp(
       title: 'Tawseel stops',
       debugShowCheckedModeBanner: false,
       builder: (context, child) =>
-          Directionality(textDirection: textDirection, child: child!),
+          Directionality(textDirection: widget.textDirection, child: child!),
       home: Scaffold(
         appBar: AppBar(title: const Text("Today's stops")),
         body: Column(
           children: [
             SyncBanner(
               key: const Key('sync-banner'),
-              pendingCount: pendingCount,
+              pendingCount: widget.pendingCount,
             ),
             Expanded(
-              child: KeyedSubtree(
-                key: const Key('layout-compact'),
-                child: ListView.builder(
-                  itemCount: stops.length,
-                  itemBuilder: (context, i) => StopTile(
-                    key: Key('stop-${stops[i].id}'),
-                    stop: stops[i],
-                    onTap: () {},
-                    onCall: () {},
-                  ),
-                ),
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  if (constraints.maxWidth >= 600) {
+                    return Row(
+                      key: const Key('layout-expanded'),
+                      children: [
+                        SizedBox(width: 320, child: listWidget),
+                        const VerticalDivider(width: 1),
+                        Expanded(
+                          child: Container(
+                            key: const Key('stop-detail'),
+                            padding: const EdgeInsets.all(16.0),
+                            child: Center(
+                              child: Text(
+                                _selectedStop?.customerName ?? '',
+                                style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    );
+                  } else {
+                    return KeyedSubtree(
+                      key: const Key('layout-compact'),
+                      child: listWidget,
+                    );
+                  }
+                },
               ),
             ),
           ],
